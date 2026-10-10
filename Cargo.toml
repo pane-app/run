@@ -1,0 +1,24 @@
+[package]
+name = "run"
+version = "0.2.0"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pane's Rust SDK. It is not on crates.io yet (pane-app/pane#281); until it
+# is, CI patches this dependency to the pane-extension folder of the Pane
+# checkout it pins (see .github/workflows/ci.yml), and a local build can
+# patch it the same way.
+pane-extension = "0.1"
+# The package's preferences, read through the SDK with serde's no_std
+# form: the shell "Run in Terminal" opens the command line in.
+serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
+# As Pane's own guests workspace builds its components: a small component,
+# with no unwinding to carry into the WebAssembly component.
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true
