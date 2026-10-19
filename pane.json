@@ -1,8 +1,8 @@
 {
   "manifestVersion": 1,
   "title": "Run",
-  "version": "0.2.0",
-  "apiVersion": "0.1",
+  "version": "0.3.0",
+  "apiVersion": "0.2",
   "platforms": ["windows"],
   "icon": "icon.svg",
   "preferences": [
@@ -48,7 +48,7 @@
       "title": "Run with Completions",
       "subtitle": "Type a command line; what you ran and installed completes it as you type",
       "component": "run.wasm",
-      "search": true
+      "mode": "designed"
     },
     {
       "id": "run-history",
