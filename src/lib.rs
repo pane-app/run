@@ -16,8 +16,8 @@
 //! records nothing. "Run in Terminal" runs the command line where console
 //! tools stay open to be read — in a new Windows Terminal tab when it is
 //! installed, otherwise in the shell's own window — with the shell chosen
-//! in the extension's preferences. "Run with Completions" opens a screen
-//! whose search field holds the command line: as the user types, the
+//! in the extension's preferences. "Run with Completions" opens a designed
+//! List whose search field holds the command line: as the user types, the
 //! field is completed from the Run dialog's history, programs in App
 //! Paths and on the search path, Control Panel applets, management
 //! consoles, registered schemes and environment variables, each matching
@@ -29,18 +29,18 @@
 #![no_std]
 
 use pane_extension::alloc::{
+    borrow::ToOwned,
     format,
     string::{String, ToString},
     vec,
     vec::Vec,
 };
-use pane_extension::feedback::{Toast, ToastStyle, show_hud, show_toast};
+use pane_extension::feedback::{HudStyle, Toast, show_hud, show_toast};
 use pane_extension::programs::{self, Options};
 use pane_extension::run::{self, CompletionSource, RunError};
-use pane_extension::search::SearchResult;
+use pane_extension::view::{Cx, IntoAnswer, Pending, View, item, list};
 use pane_extension::{
-    Action, Command, CustomView, FieldValue, FormError, Item, LaunchRecord, LaunchType, List,
-    NoCustomView, commands, preferences,
+    Action, Command, Item, LaunchRecord, LaunchType, List, commands, preferences,
 };
 
 /// The command that runs a command line.
@@ -50,7 +50,8 @@ const RUN_AS_ADMINISTRATOR: &str = "run-as-administrator";
 /// The command that runs a command line in a terminal.
 const RUN_IN_TERMINAL: &str = "run-in-terminal";
 /// The command whose search field holds the command line, completed as
-/// the user types.
+/// the user types: a designed view (its `pane.json` entry says `"mode":
+/// "designed"`).
 const RUN_WITH_COMPLETIONS: &str = "run-with-completions";
 /// The command that lists the history.
 const RUN_HISTORY: &str = "run-history";
@@ -65,7 +66,6 @@ const TITLE_CHARS: usize = 80;
 
 struct Run;
 pane_extension::export!(Run);
-pane_extension::search::export!(Run);
 
 /// The error's message, as the answer the launcher shows.
 fn explain(error: RunError) -> String {
@@ -100,7 +100,7 @@ async fn run_line(
         } else {
             format!("Ran {line}")
         };
-        show_hud(&title, ToastStyle::Success);
+        show_hud(&title, HudStyle::Success);
     }
     Ok(())
 }
@@ -187,7 +187,7 @@ async fn run_in_terminal(line: &str, launch_type: LaunchType) -> Result<(), Stri
         }
     }
     if launch_type != LaunchType::Background {
-        show_hud(&format!("Ran {line} in the terminal"), ToastStyle::Success);
+        show_hud(&format!("Ran {line} in the terminal"), HudStyle::Success);
     }
     Ok(())
 }
@@ -238,7 +238,8 @@ fn title_of(line: &str) -> String {
 }
 
 impl Command for Run {
-    type CustomView = NoCustomView;
+    /// The view "Run with Completions" opens.
+    type DesignedView = Completions;
 
     /// Runs a no-view command: "Run" runs the command line it was sent,
     /// "Run as Administrator" runs it elevated, "Run in Terminal" runs it
@@ -255,7 +256,7 @@ impl Command for Run {
             }
             RUN_WITH_COMPLETIONS => {
                 return Err(format!(
-                    "`{RUN_WITH_COMPLETIONS}` opens a screen; it has no run entry point"
+                    "`{RUN_WITH_COMPLETIONS}` opens a designed view; it has no run entry point"
                 ));
             }
             RUN_HISTORY => {
@@ -267,20 +268,13 @@ impl Command for Run {
         }
     }
 
-    /// The command's screen: "Run with Completions" says to type a
-    /// command line (its search field holds one, completed as it is
-    /// typed, which replaces this list while it holds text); "Run
-    /// History" lists the shared history, newest first, or says nothing
-    /// has been run yet.
+    /// The command's screen: "Run History" lists the shared history,
+    /// newest first, or says nothing has been run yet. "Run with
+    /// Completions" opens a designed view instead, which has no list.
     async fn render() -> Result<List, String> {
         if commands::current().command == RUN_WITH_COMPLETIONS {
-            return Ok(List::new("Run with Completions").item(
-                Item::new("hint", "Type a command line")
-                    .subtitle("What you ran and installed completes it as you type")
-                    .on_action(|| async {
-                        show_toast(Toast::success("Type a command line to run it"));
-                        Ok(())
-                    }),
+            return Err(format!(
+                "`{RUN_WITH_COMPLETIONS}` opens a designed view; it has no list"
             ));
         }
         let entries = run::history().map_err(explain)?;
@@ -294,56 +288,94 @@ impl Command for Run {
     }
 
     /// Runs the row whose item was drawn before, which is gone now: a
-    /// history entry's, or a completion's line. An id no item names is an
-    /// error.
+    /// history entry's. An id no item names is an error.
     async fn run_search_result(id: String) -> Result<(), String> {
         let line = id
             .strip_prefix(ENTRY)
-            .or_else(|| id.strip_prefix(LINE))
             .ok_or_else(|| format!("unknown item: {id}"))?;
         run_line(Some(line.into()), false, LaunchType::UserInitiated).await
     }
 
-    async fn submit_form(item_id: String, _values: Vec<FieldValue>) -> Result<String, FormError> {
-        Err(FormError {
-            field: None,
-            message: format!("unknown form: {item_id}"),
-        })
-    }
-
-    async fn open_view(item_id: String) -> Result<CustomView, String> {
-        Err(format!("unknown view: {item_id}"))
-    }
-}
-
-impl pane_extension::search::Guest for Run {
-    /// The completions for the text typed in "Run with Completions"'
-    /// field, with the text's own row first: Enter runs the text as
-    /// typed, then each completion's line.
-    async fn search(command: String, query: String) -> Result<Vec<SearchResult>, String> {
+    /// "Run with Completions"' view, its search field empty.
+    async fn open_designed_view(
+        command: String,
+        _launch: LaunchRecord,
+    ) -> Result<Completions, String> {
         if command != RUN_WITH_COMPLETIONS {
             return Err(format!("unknown command: {command}"));
         }
-        let text = query.trim();
-        if text.is_empty() {
-            return Ok(Vec::new());
-        }
-        let completions = run::completions(text).map_err(explain)?;
-        let mut results = vec![SearchResult {
-            id: format!("{LINE}{text}"),
-            title: format!("Run “{}”", title_of(text)),
-            subtitle: Some("Enter runs it as typed".into()),
-            file: None,
-        }];
-        results.extend(completions.into_iter().map(|completion| {
-            let title = title_of(&completion.line);
-            SearchResult {
-                id: format!("{LINE}{}", completion.line),
-                title,
-                subtitle: Some(subtitle_of(completion.source)),
-                file: None,
+        Ok(Completions {
+            text: String::new(),
+            running: None,
+        })
+    }
+}
+
+/// The view "Run with Completions" opens: a designed List that handles its
+/// search field's text itself, since extension API 0.2 retired a command's
+/// own search export (pane-app/pane#240). While the field is blank it says
+/// to type a command line; once it holds text, the text's own row comes
+/// first, Enter running it as typed, then each completion's row, Enter
+/// running its line. A run that fails says why in a failure toast.
+struct Completions {
+    /// The text typed in the search field, as the view last heard it.
+    text: String,
+    /// The line being run, if one is: work the view waits for, so that it
+    /// runs between Pane's calls.
+    running: Option<Pending<()>>,
+}
+
+impl Completions {
+    /// Runs `line`, as typed or completed, saying what ran or why it did
+    /// not.
+    fn run(&mut self, line: String) {
+        self.running = Some(Pending::loading(async move {
+            if let Err(why) = run_line(Some(line), false, LaunchType::UserInitiated).await {
+                show_toast(Toast::failure(why));
             }
         }));
-        Ok(results)
+    }
+}
+
+impl View for Completions {
+    fn render(&mut self, cx: &mut Cx<Self>) -> impl IntoAnswer {
+        if self.running.as_mut().and_then(Pending::ready).is_some() {
+            self.running = None;
+        }
+        let typed = self.text.trim().to_string();
+        let view = list()
+            .navigation_title("Run with Completions")
+            .search_placeholder("Type a command line…")
+            .on_search_text(cx.value_listener(|this: &mut Self, text: &str| {
+                this.text = text.to_owned();
+            }));
+        if typed.is_empty() {
+            return Ok(view.child(
+                item("hint")
+                    .title("Type a command line")
+                    .subtitle("What you ran and installed completes it as you type")
+                    .on_press(cx.listener(|_: &mut Self| {
+                        show_toast(Toast::success("Type a command line to run it"));
+                    })),
+            ));
+        }
+        let completions = run::completions(&typed).map_err(explain)?;
+        let as_typed = typed.clone();
+        let mut view = view.child(
+            item(format!("{LINE}{typed}"))
+                .title(format!("Run “{}”", title_of(&typed)))
+                .subtitle("Enter runs it as typed")
+                .on_press(cx.listener(move |this: &mut Self| this.run(as_typed.clone()))),
+        );
+        for completion in completions {
+            let line = completion.line.clone();
+            view = view.child(
+                item(format!("{LINE}{}", completion.line))
+                    .title(title_of(&completion.line))
+                    .subtitle(subtitle_of(completion.source))
+                    .on_press(cx.listener(move |this: &mut Self| this.run(line.clone()))),
+            );
+        }
+        Ok(view)
     }
 }
