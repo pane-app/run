@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "title": "Run",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "apiVersion": "0.2",
   "platforms": ["windows"],
   "icon": "icon.svg",
