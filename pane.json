@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "title": "Run",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "apiVersion": "0.2",
   "platforms": ["windows"],
   "icon": "icon.svg",
@@ -30,6 +30,7 @@
     {
       "id": "run-as-administrator",
       "title": "Run as Administrator",
+      "icon": "icons/run-as-administrator.svg",
       "subtitle": "Runs a command line through Windows' own elevation prompt",
       "component": "run.wasm",
       "mode": "no-view",
@@ -38,6 +39,7 @@
     {
       "id": "run-in-terminal",
       "title": "Run in Terminal",
+      "icon": "icons/run-in-terminal.svg",
       "subtitle": "Runs a command line in a new Windows Terminal tab, or the shell's own window",
       "component": "run.wasm",
       "mode": "no-view",
@@ -46,6 +48,7 @@
     {
       "id": "run-with-completions",
       "title": "Run with Completions",
+      "icon": "icons/run-with-completions.svg",
       "subtitle": "Type a command line; what you ran and installed completes it as you type",
       "component": "run.wasm",
       "mode": "designed"
@@ -53,6 +56,7 @@
     {
       "id": "run-history",
       "title": "Run History",
+      "icon": "icons/run-history.svg",
       "subtitle": "What you ran in Pane and the Run dialog: run it again, or delete it",
       "component": "run.wasm"
     }
